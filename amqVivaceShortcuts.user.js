@@ -398,16 +398,17 @@ const optimizedShortcuts = (targets) => {
   let altShortcuts = [];
   let currentLength = 0;
   let shortestLength = 999;
-  let highlightsOnly = false;
-  let highlightedShortcuts = JSON.parse(
+  let indexSlice = 0;
+  let highlightedList = []; //Used to show shortcuts that contain more down arrows than another one, but are still highlighted
+  let highlightedShortcuts = new Set(JSON.parse(
     localStorage.getItem(LOCAL_STORAGE_KEY) || "[]"
-  );
+  ));
 
   for (let substring of sortedSubstrings) {
     const newLength = substring.length;
 
     // When searching for longer substrings, first pick those from the altShortcuts list
-    if (newLength > currentLength && !highlightsOnly) {
+    if (newLength > currentLength) {
       altShortcuts = altShortcuts.filter((s) => {
         // Move altShortcuts of the currentLength to the shortcuts list
         if (s.length === currentLength) {
@@ -423,10 +424,10 @@ const optimizedShortcuts = (targets) => {
         shortcuts.length >= NUM_SHORTCUTS ||
         newLength > shortestLength + MAX_LENGTH_DIFFERENTIAL
       ) {
-        highlightsOnly = true;
+        break;
       }
     }
-
+    indexSlice += 1;
     const suggestions = getSuggestions(substring);
     currentLength = newLength;
 
@@ -441,15 +442,15 @@ const optimizedShortcuts = (targets) => {
         bestSubstring = substring + "↓".repeat(pos);
       }
       substring = substring + "↓".repeat(pos);
-      if (highlightedShortcuts.includes(substring)) {
+      if (highlightedShortcuts.has(substring)) {
         shortcuts.push(substring);
         shortestLength = shortcuts[0].length;
+        highlightedList.push(substring+"↓");
         continue;
       }
       if (
         substring.length > MAX_SUBSTRING_LENGTH ||
-        (TOP_SHORTCUTS_ONLY && pos > 0) ||
-        highlightsOnly
+        (TOP_SHORTCUTS_ONLY && pos > 0)
       ) {
         continue;
       }
@@ -472,6 +473,23 @@ const optimizedShortcuts = (targets) => {
       }
     }
   }
+
+  //Avoids calling getSuggestions on shortcuts when only checking for highlighted shortcuts. This reduces lags when there are a lot of candidates (e.g. CHA-LA HEAD-CHA-LA)
+  const remainingSubstrings = [...highlightedList, ...sortedSubstrings.slice(indexSlice)];
+  for (let substring of remainingSubstrings){
+      let substringChecker = substring;
+      substring = substring.replace("↓","");
+      for(let i = substringChecker.length-substring.length; i < MAX_DROPDOWN_ITEMS; i++){
+          if(highlightedShortcuts.has(substringChecker)){
+              const suggestions = getSuggestions(substring);
+              if(targets.includes(suggestions[i])){
+                  shortcuts.push(substringChecker);
+              }
+          }
+          substringChecker += "↓";
+      }
+  }
+
 
   // If not enough shortcuts were found, try to fill with the alternative shortcuts to reach at least NUM_SHORTCUTS. When including a shortcut, ensure that all the ones with the same length are included too.
   if (altShortcuts.length > 0 && shortcuts.length < NUM_SHORTCUTS) {
